@@ -80,7 +80,7 @@ void gtparseANS(const byte* data, int begin, int end,NSMutableArray <GTASN1Item*
     
     int _parseIndex ;
 }
-@property(nonatomic, strong)NSMutableArray<GTASN1Item *> *ansData;
+@property(nonatomic, strong)NSMutableArray *ansData;
 
 @property(nonatomic, strong)NSData *orginData;
 @end
@@ -113,32 +113,58 @@ void gtparseANS(const byte* data, int begin, int end,NSMutableArray <GTASN1Item*
     return nil;
 }
 
-- (BOOL)isCA{
-    
-    for (int i = 0 ; i < self.ansData.count; ++ i ) {
-        GTASN1Item *item = arrGetObject(self.ansData, i , [GTASN1Item class]);
-        
-        if ([item.title isEqualToString:@"2.5.29.19"]) {
-            i ++ ;
+/**
+ * 1 yes
+ * 0 no
+ * -1 unknown
+ */
+- (int )_checkIsCA:(NSArray *)arrItems{
+    for (int i = (int)arrItems.count -1 ; i >=0; -- i ) {
+        id item2 = arrGetObject(arrItems, i , [NSObject class]);
+        GTASN1Item *item = item2;
+        if ([item isKindOfClass:[GTASN1Item class]] &&  [item.title isEqualToString:@"2.5.29.19"]) {
             
-            GTASN1Item *item2 = arrGetObject(self.ansData, i , [GTASN1Item class]);
+            i ++ ;
+            GTASN1Item *item2 = arrGetObject(arrItems, i , [GTASN1Item class]);
             if (item2 && item2.type == 0x01) {
                 return [item2.title isEqualToString:@"True"];
             }
-            break;
+            return 0;
+        }
+        else if([item isKindOfClass:[NSArray class]]){
+            
+            int findCaKey  = [self _checkIsCA:(NSArray *)item];
+            if (findCaKey >= 0) {
+                return findCaKey;
+            }
         }
     }
- 
-     
-    return NO;
     
+    /// 没找到
+    return -1;
+}
+
+- (BOOL)isCA{
+    return [self _checkIsCA:self.ansData] == 1;
+    
+}
+
+- (void)testPrintArray:(NSArray *)arr level:(int )l {
+    
+    
+    for (GTASN1Item * itm in arr) {
+        if ([itm isKindOfClass:[NSArray class]]) {
+            [self testPrintArray:itm level:l + 4];
+            continue;;
+        }
+        printf("\n%*s%s %02x %s",l + 4 ,">",[itm.title UTF8String],itm.type,[[itm.data description] UTF8String]);
+    }
+    printf("\n");
 }
 
 - (void)test{
     GTLog(@"222");
-    for (GTASN1Item * itm in self.ansData) {
-        GTLog(@"%@ %02x %@",itm.title,itm.type,itm.data);
-    }
+    [self testPrintArray:self.ansData level:0];
 }
 
 /*
@@ -195,32 +221,68 @@ NSDictionary *algorithmObject = @{
     @"1.2.840.113549.1.1.13": @"sha512RSA",
     @"1.2.840.113549.1.1.11": @"sha256RSA"};
 ;
- 
- */
-- (BOOL)hasnDomain:(NSString *)strDomain{
 
-    NSMutableArray *arrDomains = [NSMutableArray new];
+ */
+
+- (NSArray *)_findSAN:(NSString *)strDomain inArray:(NSArray *)arrAnsData{
     
-    for (int i = 0 ; i < self.ansData.count; ++ i ) {
-        GTASN1Item *item = arrGetObject(self.ansData, i , [GTASN1Item class]);
-        
-        if ([item.title isEqualToString:@"2.5.29.17"]) {
+    for (int i = 0 ; i < arrAnsData.count; ++ i ) {
+        id itme0 = arrGetObject(arrAnsData, i , [NSObject class]);
+        GTASN1Item *item = itme0;
+        if ([item isKindOfClass:[GTASN1Item class]] &&  [item.title isEqualToString:@"2.5.29.17"]) {
             i ++ ;
+            NSMutableArray *arrDomains = [NSMutableArray new];
+            id next = arrGetObject(arrAnsData, i , [NSObject class]);
             
-            GTASN1Item *item2 = arrGetObject(self.ansData, i , [GTASN1Item class]);
-            while (item2 && item2.type == 0x82) {
-                if (item2.title.length) {
-                    [arrDomains safe_addObject:item2.title];
+            if ([next isKindOfClass:[NSArray class]]) {
+                NSArray *arrSans = next ;
+                int j = 0;
+                GTASN1Item *item2 =  arrGetObject(arrSans, j   , [GTASN1Item class]);
+                while (item2 && item2.type == 0x82) {
+                    if (item2.title.length) {
+                        [arrDomains safe_addObject:item2.title];
+                    }
+                    j ++;
+                    item2 = arrGetObject(arrSans, j   , [GTASN1Item class]);
+                    
                 }
-                
-                i ++;
-                item2 = arrGetObject(self.ansData, i , [GTASN1Item class]);
-                
+                i--;
+                return arrDomains;
             }
-            i--;
-            break;
+            else{
+                GTASN1Item *item2 = arrGetObject(arrAnsData, i , [GTASN1Item class]);
+                while (item2 && item2.type == 0x82) {
+                    if (item2.title.length) {
+                        [arrDomains safe_addObject:item2.title];
+                    }
+                    i ++;
+                    item2 = arrGetObject(arrAnsData, i , [GTASN1Item class]);
+                    
+                }
+                i--;
+                return arrDomains;
+            }
+           
+            
+            
+        }
+        else if([item isKindOfClass:[NSArray class]]){
+            id z = [self _findSAN:strDomain  inArray:item];
+            if (z) {
+                return z;
+            }
         }
     }
+    
+    return nil;
+}
+
+
+- (BOOL)hasnDomain:(NSString *)strDomain{
+    
+    NSArray *arrDomains = [self  _findSAN:strDomain inArray:self.ansData];
+    GTLog(@"%@",arrDomains);
+  
     for (NSString *san in arrDomains) {
         NSString *san2 = [san stringByReplacingOccurrencesOfString:@"*" withString:@""];
         
@@ -263,17 +325,29 @@ NSDictionary *algorithmObject = @{
         title = @"";
         switch (type) {
             case 0x30:  // 结构体序列
+            {
                 if (_parseIndex == 2) {
                     self.orginData = [[NSData alloc] initWithBytes:data+i - lens.lenLen -1 length:lens.len + lens.lenLen + 1 ];
                     GTLog(@"%d", lens.len);
                 }
-                [self gtparseANS:data  begin:i  end:i + lens.len ansData:ansData];
+                NSMutableArray *arrSeq = [NSMutableArray new];
+                [self gtparseANS:data  begin:i  end:i + lens.len ansData:arrSeq];
+                [ansData safe_addObject:arrSeq];
 //                gtparseANS(data, i, i + lens.len,ansData);
                 break;
+            }
+                
             case 0x31:  // Set序列
-                [self gtparseANS:data  begin:i  end:i + lens.len ansData:ansData];
-//                gtparseANS(data, i, i + lens.len,ansData);
+            {
+                NSMutableArray *arrSeq = [NSMutableArray new];
+                [self gtparseANS:data  begin:i  end:i + lens.len ansData:arrSeq];
+                [ansData safe_addObject:arrSeq];
+                //                gtparseANS(data, i, i + lens.len,ansData);
                 break;
+            
+            }
+               
+                
             case 0xa3:  // 扩展字段
             {
                 title = @"Extension";
@@ -507,27 +581,41 @@ NSDictionary *algorithmObject = @{
 }
 
 
-- (BOOL)findDataWithKey:(NSString *)key type:(int)type{
-    for (int i = 0 ; i < self.ansData.count; ++ i ) {
-        GTASN1Item *item = arrGetObject(self.ansData, i , [GTASN1Item class]);
-        
-        if ([item.title isEqualToString:key]) {
-            i ++ ;
-            
-            return  YES;
-         
+- (BOOL)findKey:(NSString *)key target:(id) obj{
+    if ([obj isKindOfClass:[GTASN1Item class]]) {
+        return  [[(GTASN1Item *)obj title] isEqualToString:key];
+    }
+    else{
+        if ([obj isKindOfClass:[NSArray class]]) {
+            for (id obj2 in obj) {
+                return [self findKey:key  target:obj2];
+            }
         }
     }
- 
-     
     return NO;
+}
+
+- (BOOL )isSha1Sign{
+    //    1.2.840.113549.1.1.5
+     ;
+    NSArray *arr = self.ansData.firstObject;
+    id obj =  arrGetObject(arr , 1, [NSObject class]);
+    return [self findKey:@"1.2.840.113549.1.1.5" target:obj];
+}
+
+- (NSData *)signData{
+
+    GTASN1Item *d = self.ansData.lastObject;
+    
+    while (d && [d isKindOfClass:[NSArray class]]) {
+        d = [(NSArray *)d lastObject];
+    };
+    return d.data;
+    
 }
 @end
 
-
-
-
-
+ 
 
 BOOL gtVerifySignature(NSData* plainData, NSData* signature, SecKeyRef publicKey,BOOL isSha1 )
 {
@@ -571,86 +659,29 @@ BOOL gtVerifySignature(NSData* plainData, NSData* signature, SecKeyRef publicKey
 __attribute__((constructor)) static void PP(){
     GTLog(@"123");
     
-    
-    NSString *ca0 = @"MIIEizCCA3OgAwIBAgIQBUb+GCP34ZQdo5/OFMRhczANBgkqhkiG9w0BAQsFADBh\
-    MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\
-    d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD\
-    QTAeFw0xNzExMDYxMjIzNDVaFw0yNzExMDYxMjIzNDVaMF4xCzAJBgNVBAYTAlVT\
-    MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j\
-    b20xHTAbBgNVBAMTFEdlb1RydXN0IFJTQSBDQSAyMDE4MIIBIjANBgkqhkiG9w0B\
-    AQEFAAOCAQ8AMIIBCgKCAQEAv4rRY03hGOqHXegWPI9/tr6HFzekDPgxP59FVEAh\
-    150Hm8oDI0q9m+2FAmM/n4W57Cjv8oYi2/hNVEHFtEJ/zzMXAQ6CkFLTxzSkwaEB\
-    2jKgQK0fWeQz/KDDlqxobNPomXOMJhB3y7c/OTLo0lko7geG4gk7hfiqafapa59Y\
-    rXLIW4dmrgjgdPstU0Nigz2PhUwRl9we/FAwuIMIMl5cXMThdSBK66XWdS3cLX18\
-    4ND+fHWhTkAChJrZDVouoKzzNYoq6tZaWmyOLKv23v14RyZ5eqoi6qnmcRID0/i6\
-    U9J5nL1krPYbY7tNjzgC+PBXXcWqJVoMXcUw/iBTGWzpwwIDAQABo4IBQDCCATww\
-    HQYDVR0OBBYEFJBY/7CcdahRVHex7fKjQxY4nmzFMB8GA1UdIwQYMBaAFAPeUDVW\
-    0Uy7ZvCj4hsbw5eyPdFVMA4GA1UdDwEB/wQEAwIBhjAdBgNVHSUEFjAUBggrBgEF\
-    BQcDAQYIKwYBBQUHAwIwEgYDVR0TAQH/BAgwBgEB/wIBADA0BggrBgEFBQcBAQQo\
-    MCYwJAYIKwYBBQUHMAGGGGh0dHA6Ly9vY3NwLmRpZ2ljZXJ0LmNvbTBCBgNVHR8E\
-    OzA5MDegNaAzhjFodHRwOi8vY3JsMy5kaWdpY2VydC5jb20vRGlnaUNlcnRHbG9i\
-    YWxSb290Q0EuY3JsMD0GA1UdIAQ2MDQwMgYEVR0gADAqMCgGCCsGAQUFBwIBFhxo\
-    dHRwczovL3d3dy5kaWdpY2VydC5jb20vQ1BTMA0GCSqGSIb3DQEBCwUAA4IBAQAw\
-    8YdVPYQI/C5earp80s3VLOO+AtpdiXft9OlWwJLwKlUtRfccKj8QW/Pp4b7h6QAl\
-    ufejwQMb455OjpIbCZVS+awY/R8pAYsXCnM09GcSVe4ivMswyoCZP/vPEn/LPRhH\
-    hdgUPk8MlD979RGoUWz7qGAwqJChi28uRds3thx+vRZZIbEyZ62No0tJPzsSGSz8\
-    nQ//jP8BIwrzBAUH5WcBAbmvgWfrKcuv+PyGPqRcc4T55TlzrBnzAzZ3oClo9fTv\
-    O9PuiHMKrC6V6mgi0s2sa/gbXlPCD9Z24XUMxJElwIVTDuKB0Q4YMMlnpN/QChJ4\
-    B0AFsQ+DU0NCO+f78Xf7";
-    
-    
-    NSString *strCa  = @"MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh\
-    MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\
-    d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD\
-    QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT\
-    MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j\
-    b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG\
-    9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB\
-    CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97\
-    nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt\
-    43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P\
-    T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4\
-    gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO\
-    BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR\
-    TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw\
-    DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr\
-    hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg\
-    06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF\
-    PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls\
-    YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk\
-    CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=";
-    
-    
-    
-    NSData *dataCa1 = [[NSData alloc] initWithBase64EncodedString:strCa options:NSDataBase64DecodingIgnoreUnknownCharacters];
-    
-    NSData *dataRootCa = [[NSData alloc] initWithBase64EncodedString:strCa options:NSDataBase64DecodingIgnoreUnknownCharacters];
-    
-    /// 1.2.840.113549.1.1.1 RSA 证书的公钥
-    ///
-    
-    GTASN1Parser *p1 = [[GTASN1Parser alloc] initWithData:dataCa1];
-//    GTASN1Parser *p2 = [[GTASN1Parser alloc] initWithData:dataRootCa];
-    
-    
-    NSData *data1 = p1.orginData;
-    GTLog(@"%@",data1);
-    
-    NSData *signData = p1.ansData.lastObject.data;
-    
-    SecCertificateRef cert = SecCertificateCreateWithData(NULL , (__bridge CFDataRef ) dataRootCa);
-    
-    SecKeyRef key = SecCertificateCopyKey(cert);
-    
-    BOOL issha1 = [p1 findDataWithKey:@"1.2.840.113549.1.1.5" type:0];
-     
-    BOOL r = gtVerifySignature(data1, signData, key,issha1);
+
+//    NSData *signData = [p1 signData];
+//    SecCertificateRef cert = SecCertificateCreateWithData(NULL , (__bridge CFDataRef ) dataRootCa);
+//    SecKeyRef key = SecCertificateCopyKey(cert);
+//    BOOL issha1 = [p1 isSha1Sign];
+//
+//    BOOL r = gtVerifySignature(data1, signData, key,issha1);
 //    [p1 test];
-    GTLog(@"%d",r);
-     
-//    [p2 test];
-//    [[[GTASN1Parser alloc] initWithData:nil] test];
+//    GTLog(@"%d",r);
     
- 
+    {
+        NSString *str =  [[NSString alloc] initWithContentsOfFile:@"/Users/liw003/Downloads/test.pem" encoding:NSUTF8StringEncoding error:nil];
+        str = [str stringByReplacingOccurrencesOfString:@"-----BEGIN CERTIFICATE-----" withString:@""];
+        str = [str stringByReplacingOccurrencesOfString:@"-----END CERTIFICATE-----" withString:@""];
+        
+        NSData *dataCertificate = [[NSData alloc] initWithBase64EncodedString:str options:NSDataBase64DecodingIgnoreUnknownCharacters];
+        
+        GTASN1Parser *gp = [[GTASN1Parser alloc] initWithData:dataCertificate];
+        [gp test];
+        
+        GTLog(@" isCA %d",[gp isCA]);
+        GTLog(@"rsscc.com %d",[gp hasnDomain:@"rsscc.com"]);
+        GTLog(@"tmall.com %d",[gp hasnDomain:@"tmall.com"]);
+    }
 }
 #endif
