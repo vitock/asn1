@@ -151,7 +151,7 @@ void gtparseANS(const byte* data, int begin, int end,NSMutableArray <GTASN1Item*
 
 - (void)testPrintArray:(NSArray *)arr level:(int )l {
     
-    
+    printf("\n%*s[",l,"");
     for (GTASN1Item * itm in arr) {
         if ([itm isKindOfClass:[NSArray class]]) {
             [self testPrintArray:itm level:l + 4];
@@ -159,16 +159,18 @@ void gtparseANS(const byte* data, int begin, int end,NSMutableArray <GTASN1Item*
         }
         printf("\n%*s%s %02x %s",l + 4 ,">",[itm.title UTF8String],itm.type,[[itm.data description] UTF8String]);
     }
-    printf("\n");
+    printf("\n%*s]",l,"");
 }
 
 - (void)test{
     GTLog(@"222");
+    printf("\n\n");
     [self testPrintArray:self.ansData level:0];
+    printf("\n\n");
 }
 
 /*
- 
+  
  2.5.29.17  Subject alernate name 主替换名称 dns name
 NSDictionary *titleToString = @{
     @"1.3.6.1.5.5.7.3.1":@"服务器身份验证(id_kp_serverAuth): True",
@@ -476,7 +478,6 @@ NSDictionary *algorithmObject = @{
                     tmp[t] = data[i + t];
                 }
                 GTASN1Item *itm = [GTASN1Item new];
-                itm.title = title;
                 itm.len = lens.len;
                 itm.type = type;
                 
@@ -613,6 +614,29 @@ NSDictionary *algorithmObject = @{
     return d.data;
     
 }
+
+/// 获取pulickey 的data
+- (NSString *)getPublicKeyRawDataSha1{
+    NSArray *arrTop = self.ansData.firstObject;
+    NSArray *arrCert = arrTop.firstObject;
+    NSArray *arrPub = arrGetObject(arrCert, 6 , [NSArray class]);
+    
+    GTASN1Item *item = arrGetObject(arrPub, 1, [GTASN1Item class]);
+    /// Bit String
+//    item.type == 0x03;
+    NSData *data = item.data;
+    
+    uint8_t hashBytes[CC_SHA1_DIGEST_LENGTH];
+    CC_SHA1([data bytes], (CC_LONG)[data length], hashBytes);
+    NSMutableString *strResult = [NSMutableString stringWithCapacity:CC_SHA1_DIGEST_LENGTH * 2];
+    
+    int j = 0 ;
+    while (j < CC_SHA1_DIGEST_LENGTH) {
+        [strResult appendFormat:@"%02x",hashBytes[j]];
+        j ++ ;
+    }
+    return strResult;
+}
 @end
 
  
@@ -655,9 +679,77 @@ BOOL gtVerifySignature(NSData* plainData, NSData* signature, SecKeyRef publicKey
     return status == errSecSuccess;
 }
 
+BOOL  test2(){
+    GTLog(@"----------");
+    NSString *str =  [[NSString alloc] initWithContentsOfFile:@"/Users/liw003/Downloads/test1.pem" encoding:NSUTF8StringEncoding error:nil];
+    str = [str stringByReplacingOccurrencesOfString:@"-----BEGIN CERTIFICATE-----" withString:@""];
+    str = [str stringByReplacingOccurrencesOfString:@"-----END CERTIFICATE-----" withString:@""];
+    
+    NSData *data1 = [[NSData alloc] initWithBase64EncodedString:str options:NSDataBase64DecodingIgnoreUnknownCharacters];
+    
+    str =  [[NSString alloc] initWithContentsOfFile:@"/Users/liw003/Downloads/test2.pem" encoding:NSUTF8StringEncoding error:nil];
+    str = [str stringByReplacingOccurrencesOfString:@"-----BEGIN CERTIFICATE-----" withString:@""];
+    str = [str stringByReplacingOccurrencesOfString:@"-----END CERTIFICATE-----" withString:@""];
+    
+    NSData *data2 = [[NSData alloc] initWithBase64EncodedString:str options:NSDataBase64DecodingIgnoreUnknownCharacters];
+    
+    
+    SecCertificateRef cert = SecCertificateCreateWithData(NULL , (__bridge CFDataRef ) data2);
+    SecKeyRef key = SecCertificateCopyKey(cert);
+    
+    
+    
+    GTASN1Parser *p = [[GTASN1Parser alloc] initWithData:data1];
+    BOOL issha1 = [p isSha1Sign];
+    
+    BOOL r = gtVerifySignature([p orginData], [p signData], key,issha1);
+    
+    CFRelease(key);
+    GTLog(@"%d",r);
+    
+    [p test];
+    
+    GTLog(@"%@",[p getPublicKeyRawDataSha1]);
+    
+    return r;
+    
+    
+    
+}
+
+void test1(){
+    {
+        NSString *str =  [[NSString alloc] initWithContentsOfFile:@"/Users/liw003/Downloads/test.pem" encoding:NSUTF8StringEncoding error:nil];
+        str = [str stringByReplacingOccurrencesOfString:@"-----BEGIN CERTIFICATE-----" withString:@""];
+        str = [str stringByReplacingOccurrencesOfString:@"-----END CERTIFICATE-----" withString:@""];
+        
+        NSData *dataCertificate = [[NSData alloc] initWithBase64EncodedString:str options:NSDataBase64DecodingIgnoreUnknownCharacters];
+        
+        GTASN1Parser *gp = [[GTASN1Parser alloc] initWithData:dataCertificate];
+        [gp test];
+        size_t hashBytesSize = CC_SHA1_DIGEST_LENGTH;
+        uint8_t* hashBytes = malloc(hashBytesSize);
+        NSData *certData = gp.orginData;
+        CC_SHA1([certData bytes], (CC_LONG)[certData length], hashBytes);
+        NSMutableString *strSha1 = [NSMutableString new];
+        for (int i = 0 ; i < hashBytesSize; ++i ) {
+            [strSha1  appendFormat:@"%x",hashBytes[i]];
+        }
+        GTLog(@"%@",strSha1);
+        
+        
+//
+        
+        GTLog(@" isCA %d",[gp isCA]);
+        GTLog(@"rsscc.com %d",[gp hasnDomain:@"rsscc.com"]);
+        GTLog(@"tmall.com %d",[gp hasnDomain:@"tmall.com"]);
+    }
+}
+
 #ifdef DEBUG
 __attribute__((constructor)) static void PP(){
     GTLog(@"123");
+//    test2();
     
 
 //    NSData *signData = [p1 signData];
@@ -669,19 +761,6 @@ __attribute__((constructor)) static void PP(){
 //    [p1 test];
 //    GTLog(@"%d",r);
     
-    {
-        NSString *str =  [[NSString alloc] initWithContentsOfFile:@"/Users/liw003/Downloads/test.pem" encoding:NSUTF8StringEncoding error:nil];
-        str = [str stringByReplacingOccurrencesOfString:@"-----BEGIN CERTIFICATE-----" withString:@""];
-        str = [str stringByReplacingOccurrencesOfString:@"-----END CERTIFICATE-----" withString:@""];
-        
-        NSData *dataCertificate = [[NSData alloc] initWithBase64EncodedString:str options:NSDataBase64DecodingIgnoreUnknownCharacters];
-        
-        GTASN1Parser *gp = [[GTASN1Parser alloc] initWithData:dataCertificate];
-        [gp test];
-        
-        GTLog(@" isCA %d",[gp isCA]);
-        GTLog(@"rsscc.com %d",[gp hasnDomain:@"rsscc.com"]);
-        GTLog(@"tmall.com %d",[gp hasnDomain:@"tmall.com"]);
-    }
+
 }
 #endif

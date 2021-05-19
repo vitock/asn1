@@ -14,8 +14,8 @@
             filePath = "ASN1/ASN.m"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "237"
-            endingLineNumber = "237"
+            startingLineNumber = "239"
+            endingLineNumber = "239"
             landmarkName = "-_findSAN:inArray:"
             landmarkType = "7">
          </BreakpointContent>
@@ -30,8 +30,8 @@
             filePath = "ASN1/ASN.m"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "286"
-            endingLineNumber = "286"
+            startingLineNumber = "288"
+            endingLineNumber = "288"
             landmarkName = "-hasnDomain:"
             landmarkType = "7">
          </BreakpointContent>
@@ -39,16 +39,16 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "FA487E29-6295-4EED-BC8B-0050711BB334"
-            shouldBeEnabled = "Yes"
+            uuid = "9B45DB53-F11A-4E73-8CB5-950DBC205880"
+            shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "ASN1/ASN.m"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "132"
-            endingLineNumber = "132"
-            landmarkName = "-_checkIsCA:"
+            startingLineNumber = "624"
+            endingLineNumber = "624"
+            landmarkName = "-getPublicKeyRawDataHash"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

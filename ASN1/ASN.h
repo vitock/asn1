@@ -22,4 +22,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)test;
 @end
 
+
+BOOL  test2();
 NS_ASSUME_NONNULL_END
