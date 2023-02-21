@@ -288,7 +288,7 @@ NSDictionary *algorithmObject = @{
     for (NSString *san in arrDomains) {
         NSString *san2 = [san stringByReplacingOccurrencesOfString:@"*" withString:@""];
         
-        // 防止 sscc.com 的匹配到  rsscc.com
+        // 防止 aaaa.com 的匹配到  baaaa.com
         if ([san2 hasPrefix:@"."] && [strDomain hasSuffix:san2]) {
             return YES;
         }
@@ -741,8 +741,6 @@ void test1(){
 //
         
         GTLog(@" isCA %d",[gp isCA]);
-        GTLog(@"rsscc.com %d",[gp hasnDomain:@"rsscc.com"]);
-        GTLog(@"tmall.com %d",[gp hasnDomain:@"tmall.com"]);
     }
 }
 
